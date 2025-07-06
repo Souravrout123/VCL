@@ -1,5 +1,5 @@
-import React, { useRef, useState } from 'react';
-import { Stage, Layer, Rect, Circle, Line } from 'react-konva';
+import React, { useRef, useState, useEffect } from 'react';
+import { Stage, Layer, Rect, Circle, Line, Transformer } from 'react-konva';
 import { v4 as uuidv4 } from 'uuid';
 import './Drawing.css';
 
@@ -52,6 +52,8 @@ const DrawingApp: React.FC = () => {
   const [redoStack, setRedoStack] = useState<Shape[][]>([]);
 
   const stageRef = useRef<any>(null);
+  const transformerRef = useRef<any>(null);
+  const selectedShapeRef = useRef<any>(null);
 
   const pushToHistory = () => {
     setHistory((prev) => [...prev, shapes]);
@@ -88,7 +90,7 @@ const DrawingApp: React.FC = () => {
     }
 
     const id = uuidv4();
-    const common = {
+    const baseProps = {
       id,
       stroke: strokeColor,
       strokeWidth,
@@ -100,7 +102,7 @@ const DrawingApp: React.FC = () => {
     const newShape: Shape =
       drawingType === 'rectangle'
         ? {
-            ...common,
+            ...baseProps,
             type: 'rectangle',
             x: pointer.x,
             y: pointer.y,
@@ -109,7 +111,7 @@ const DrawingApp: React.FC = () => {
             fill: fillColor,
           }
         : {
-            ...common,
+            ...baseProps,
             type: 'circle',
             x: pointer.x,
             y: pointer.y,
@@ -119,6 +121,7 @@ const DrawingApp: React.FC = () => {
 
     pushToHistory();
     setShapes((prev) => [...prev, newShape]);
+    setSelectedId(id);
   };
 
   const handleSelect = (id: string) => {
@@ -128,15 +131,24 @@ const DrawingApp: React.FC = () => {
     );
   };
 
-  const updateShape = (updatedShape: Partial<Shape>) => {
-    if (!selectedId) return;
+  const updateShape = (id: string, updatedProps: Partial<Shape>) => {
     pushToHistory();
     setShapes((prev) =>
       prev.map((shape) =>
-        shape.id === selectedId ? { ...shape, ...updatedShape } as Shape : shape
+        shape.id === id ? { ...shape, ...updatedProps } as Shape : shape
       )
     );
   };
+
+  useEffect(() => {
+    if (transformerRef.current && selectedId) {
+      const node = selectedShapeRef.current;
+      if (node) {
+        transformerRef.current.nodes([node]);
+        transformerRef.current.getLayer().batchDraw();
+      }
+    }
+  }, [selectedId, shapes]);
 
   const saveDrawing = () => {
     const json = JSON.stringify(shapes);
@@ -164,7 +176,7 @@ const DrawingApp: React.FC = () => {
 
   return (
     <div className="container">
-      <h2>Drawing App</h2>
+      <h2>Drawing App with Resize</h2>
 
       <div className="control-panel">
         <label>Shape:</label>
@@ -198,13 +210,32 @@ const DrawingApp: React.FC = () => {
         <Stage width={window.innerWidth - 100} height={500} ref={stageRef} onMouseDown={createShape}>
           <Layer>
             {shapes.map((shape) => {
+              const isSelected = shape.id === selectedId;
+
               if (shape.type === 'rectangle') {
                 return (
                   <Rect
                     key={shape.id}
+                    ref={isSelected ? selectedShapeRef : null}
                     {...shape}
                     onClick={() => handleSelect(shape.id)}
-                    onDragEnd={(e) => updateShape({ x: e.target.x(), y: e.target.y() })}
+                    onTransformEnd={(e) => {
+                      const node = e.target;
+                      const scaleX = node.scaleX();
+                      const scaleY = node.scaleY();
+                      node.scaleX(1);
+                      node.scaleY(1);
+                      updateShape(shape.id, {
+                        x: node.x(),
+                        y: node.y(),
+                        width: Math.max(5, node.width() * scaleX),
+                        height: Math.max(5, node.height() * scaleY),
+                      });
+                    }}
+                    onDragEnd={(e) => updateShape(shape.id, {
+                      x: e.target.x(),
+                      y: e.target.y()
+                    })}
                   />
                 );
               }
@@ -213,9 +244,24 @@ const DrawingApp: React.FC = () => {
                 return (
                   <Circle
                     key={shape.id}
+                    ref={isSelected ? selectedShapeRef : null}
                     {...shape}
                     onClick={() => handleSelect(shape.id)}
-                    onDragEnd={(e) => updateShape({ x: e.target.x(), y: e.target.y() })}
+                    onTransformEnd={(e) => {
+                      const node = e.target;
+                      const scale = node.scaleX();
+                      node.scaleX(1);
+                      node.scaleY(1);
+                      updateShape(shape.id, {
+                        x: node.x(),
+                        y: node.y(),
+                        radius: Math.max(5, shape.radius! * scale),
+                      });
+                    }}
+                    onDragEnd={(e) => updateShape(shape.id, {
+                      x: e.target.x(),
+                      y: e.target.y()
+                    })}
                   />
                 );
               }
@@ -230,14 +276,28 @@ const DrawingApp: React.FC = () => {
                       const [x1, y1, x2, y2] = shape.points;
                       const dx = e.target.x() - x1;
                       const dy = e.target.y() - y1;
-                      updateShape({ points: [x1 + dx, y1 + dy, x2 + dx, y2 + dy] });
+                      updateShape(shape.id, {
+                        points: [x1 + dx, y1 + dy, x2 + dx, y2 + dy]
+                      });
                     }}
+                    draggable
                   />
                 );
               }
 
               return null;
             })}
+
+            <Transformer
+              ref={transformerRef}
+              rotateEnabled={false}
+              ignoreStroke
+              enabledAnchors={['top-left', 'top-right', 'bottom-left', 'bottom-right']}
+              boundBoxFunc={(oldBox, newBox) => {
+                if (newBox.width < 5 || newBox.height < 5) return oldBox;
+                return newBox;
+              }}
+            />
           </Layer>
         </Stage>
       </div>
