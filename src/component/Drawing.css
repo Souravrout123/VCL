@@ -40,16 +40,13 @@ input[type="color"] {
   border: none;
 }
 
-button {
-  background-color: #2563eb;
-  color: white;
-  font-weight: 600;
-  transition: background-color 0.2s ease-in-out;
+.drawing_btn{
+background-color: #0009ff;
+border-radius: 8px 16px;
+font-size: 16px;
 }
 
-button:hover {
-  background-color: #1d4ed8;
-}
+
 
 .canvas-wrapper {
   border-radius: 12px;

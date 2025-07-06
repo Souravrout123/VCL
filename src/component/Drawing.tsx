@@ -48,7 +48,15 @@ const DrawingApp: React.FC = () => {
   const [strokeWidth, setStrokeWidth] = useState<number>(2);
   const [dashStyle, setDashStyle] = useState<'solid' | 'dashed'>('solid');
   const [fillColor, setFillColor] = useState<string>('#f0f0f0');
+  const [history, setHistory] = useState<Shape[][]>([]);
+  const [redoStack, setRedoStack] = useState<Shape[][]>([]);
+
   const stageRef = useRef<any>(null);
+
+  const pushToHistory = () => {
+    setHistory((prev) => [...prev, shapes]);
+    setRedoStack([]);
+  };
 
   const createShape = (e: any) => {
     const stage = stageRef.current.getStage();
@@ -66,12 +74,13 @@ const DrawingApp: React.FC = () => {
           id,
           type: 'line',
           stroke: strokeColor,
-          strokeWidth: strokeWidth,
+          strokeWidth,
           dash: dashArray,
           draggable: true,
           isSelected: false,
           points: [lineStart.x, lineStart.y, pointer.x, pointer.y],
         };
+        pushToHistory();
         setShapes((prev) => [...prev, newLine]);
         setLineStart(null);
       }
@@ -82,7 +91,7 @@ const DrawingApp: React.FC = () => {
     const common = {
       id,
       stroke: strokeColor,
-      strokeWidth: strokeWidth,
+      strokeWidth,
       dash: dashArray,
       draggable: true,
       isSelected: false,
@@ -108,6 +117,7 @@ const DrawingApp: React.FC = () => {
             fill: fillColor,
           };
 
+    pushToHistory();
     setShapes((prev) => [...prev, newShape]);
   };
 
@@ -120,6 +130,7 @@ const DrawingApp: React.FC = () => {
 
   const updateShape = (updatedShape: Partial<Shape>) => {
     if (!selectedId) return;
+    pushToHistory();
     setShapes((prev) =>
       prev.map((shape) =>
         shape.id === selectedId ? { ...shape, ...updatedShape } as Shape : shape
@@ -133,16 +144,31 @@ const DrawingApp: React.FC = () => {
     alert('Drawing saved!');
   };
 
+  const undoLast = () => {
+    const prev = history[history.length - 1];
+    if (prev) {
+      setRedoStack((r) => [...r, shapes]);
+      setShapes(prev);
+      setHistory(history.slice(0, -1));
+    }
+  };
+
+  const redoLast = () => {
+    const next = redoStack[redoStack.length - 1];
+    if (next) {
+      setHistory((h) => [...h, shapes]);
+      setShapes(next);
+      setRedoStack(redoStack.slice(0, -1));
+    }
+  };
+
   return (
     <div className="container">
       <h2>Drawing App</h2>
 
       <div className="control-panel">
         <label>Shape:</label>
-        <select
-          value={drawingType}
-          onChange={(e) => setDrawingType(e.target.value as ShapeType)}
-        >
+        <select value={drawingType} onChange={(e) => setDrawingType(e.target.value as ShapeType)}>
           <option value="rectangle">Rectangle</option>
           <option value="circle">Circle</option>
           <option value="line">Line</option>
@@ -152,12 +178,7 @@ const DrawingApp: React.FC = () => {
         <input type="color" value={strokeColor} onChange={(e) => setStrokeColor(e.target.value)} />
 
         <label>Stroke Width:</label>
-        <input
-          type="number"
-          min="1"
-          value={strokeWidth}
-          onChange={(e) => setStrokeWidth(parseInt(e.target.value))}
-        />
+        <input type="number" min="1" value={strokeWidth} onChange={(e) => setStrokeWidth(parseInt(e.target.value))} />
 
         <label>Line Style:</label>
         <select value={dashStyle} onChange={(e) => setDashStyle(e.target.value as 'solid' | 'dashed')}>
@@ -168,55 +189,54 @@ const DrawingApp: React.FC = () => {
         <label>Fill Color:</label>
         <input type="color" value={fillColor} onChange={(e) => setFillColor(e.target.value)} />
 
-        <button onClick={saveDrawing}>Save</button>
+        <button className='drawing_btn' onClick={saveDrawing}>Save</button>
+        <button className='drawing_btn' onClick={undoLast}>Undo</button>
+        <button className='drawing_btn' onClick={redoLast}>Redo</button>
       </div>
 
       <div className="canvas-wrapper">
-        <Stage
-          width={window.innerWidth - 100}
-          height={500}
-          ref={stageRef}
-          onMouseDown={createShape}
-        >
+        <Stage width={window.innerWidth - 100} height={500} ref={stageRef} onMouseDown={createShape}>
           <Layer>
             {shapes.map((shape) => {
-              switch (shape.type) {
-                case 'rectangle':
-                  return (
-                    <Rect
-                      key={shape.id}
-                      {...shape}
-                      dash={shape.dash}
-                      onClick={() => handleSelect(shape.id)}
-                      onDragEnd={(e) => updateShape({ x: e.target.x(), y: e.target.y() })}
-                    />
-                  );
-                case 'circle':
-                  return (
-                    <Circle
-                      key={shape.id}
-                      {...shape}
-                      dash={shape.dash}
-                      onClick={() => handleSelect(shape.id)}
-                      onDragEnd={(e) => updateShape({ x: e.target.x(), y: e.target.y() })}
-                    />
-                  );
-                case 'line':
-                  return (
-                    <Line
-                      key={shape.id}
-                      {...shape}
-                      dash={shape.dash}
-                      onClick={() => handleSelect(shape.id)}
-                      onDragEnd={(e) => {
-                        const [x1, y1, x2, y2] = shape.points;
-                        const dx = e.target.x() - x1;
-                        const dy = e.target.y() - y1;
-                        updateShape({ points: [x1 + dx, y1 + dy, x2 + dx, y2 + dy] });
-                      }}
-                    />
-                  );
+              if (shape.type === 'rectangle') {
+                return (
+                  <Rect
+                    key={shape.id}
+                    {...shape}
+                    onClick={() => handleSelect(shape.id)}
+                    onDragEnd={(e) => updateShape({ x: e.target.x(), y: e.target.y() })}
+                  />
+                );
               }
+
+              if (shape.type === 'circle') {
+                return (
+                  <Circle
+                    key={shape.id}
+                    {...shape}
+                    onClick={() => handleSelect(shape.id)}
+                    onDragEnd={(e) => updateShape({ x: e.target.x(), y: e.target.y() })}
+                  />
+                );
+              }
+
+              if (shape.type === 'line') {
+                return (
+                  <Line
+                    key={shape.id}
+                    {...shape}
+                    onClick={() => handleSelect(shape.id)}
+                    onDragEnd={(e) => {
+                      const [x1, y1, x2, y2] = shape.points;
+                      const dx = e.target.x() - x1;
+                      const dy = e.target.y() - y1;
+                      updateShape({ points: [x1 + dx, y1 + dy, x2 + dx, y2 + dy] });
+                    }}
+                  />
+                );
+              }
+
+              return null;
             })}
           </Layer>
         </Stage>
